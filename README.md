@@ -51,6 +51,21 @@ If you can output the environmental visualization map normally, the agents' norm
 ### Configure the Open-source LLMs
 We recommend using [vLLM](https://github.com/vllm-project/vllm) for local deployment of open-source LLMs. 
 
+For separate local chat and embedding services, configure the OpenAI-compatible base URLs with environment variables:
+
+```bash
+export COLLAB_LLM_API_BASE=http://localhost:31234/v1
+export COLLAB_EMBEDDING_API_BASE=http://localhost:31235/v1
+```
+
+The same values can also be passed to `main.py`:
+
+```bash
+python main.py --gpt_model qwen3-30b-a3b-instruct-2507 \
+  --local_server_api http://localhost:31234/v1 \
+  --embedding_server_api http://localhost:31235/v1
+```
+
 ### Evaluation
 The evaluation scripts are provided in the "Collab-Overcooked/src" folder. The evaluation process consists of three sequential scripts:
 - **evaluation.py**: Evaluates the environment's output, calculates the metrics for each task, and stores the results in the corresponding task folder.
@@ -65,7 +80,8 @@ cd Collab-Overcooked/src
 python main.py --order boiled_egg --gpt_model gpt-4o 
 
 # Evaluate a single task: reads logs from ./data and writes results to ./eval_result by default
-python evaluation.py --test_mode fix_task --model gpt-4o --order boiled_egg
+python evaluation.py --test_mode fix_task --model gpt-4o --order boiled_egg \
+  --embedding_server_api http://localhost:31235/v1
 
 # Aggregate per-task results into a CSV, then compute per-level averages
 python organize_result.py

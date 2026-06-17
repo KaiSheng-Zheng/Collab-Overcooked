@@ -12,7 +12,13 @@ from overcooked_ai_py.utils import load_dict_from_file, load_pickle
 from collab.collab import LLMAgents
 
 from collections import defaultdict
-from collab.modules import EMBEDDING_MODEL
+from openai import OpenAI
+
+from collab.api_config import (
+    EMBEDDING_MODEL,
+    get_embedding_api_base,
+    get_embedding_api_key,
+)
 
 
 def make_agent(alg: str, mdp, layout, **gptargs):
@@ -60,7 +66,6 @@ def make_agent(alg: str, mdp, layout, **gptargs):
 # make the example into embedding for retrieval
 def get_example_embedding(example_path, save_path=""):
     input = ""
-    import openai
     import os
     import pandas as pd
 
@@ -68,9 +73,8 @@ def get_example_embedding(example_path, save_path=""):
     del_index = []
     cwd = os.getcwd()
     key_file = os.path.join(cwd, "openai_key.txt")
-    with open(key_file, "r") as f:
-        key = f.read()
-    openai.api_key = key
+    key = get_embedding_api_key(key_file)
+    client = OpenAI(api_key=key, base_url=get_embedding_api_base())
 
     with open(example_path, "r") as f:
         input = f.read()
@@ -96,7 +100,7 @@ def get_example_embedding(example_path, save_path=""):
             map(lambda x: x[: x.index("[OUTPUT]")] if "[OUTPUT]" in x else x, batch)
         )
         print(f"Batch {batch_start} to {batch_end-1}")
-        response = openai.Embedding.create(model=EMBEDDING_MODEL, input=batch)
+        response = client.embeddings.create(model=EMBEDDING_MODEL, input=batch)
         for i, be in enumerate(response.data):
             assert i == be.index  # double check embeddings are in same order as input
         batch_embeddings = [e.embedding for e in response.data]

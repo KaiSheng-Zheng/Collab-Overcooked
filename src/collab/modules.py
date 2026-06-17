@@ -13,15 +13,20 @@ import tiktoken
 from transformers import AutoTokenizer
 import openai
 from openai import OpenAI
+from .api_config import (
+    EMBEDDING_MODEL,
+    get_embedding_api_base,
+    get_embedding_api_key,
+    get_llm_api_base,
+    get_llm_api_key,
+)
 from .web_util import output_to_port, listen_to_server, username_record
 
 cwd = os.getcwd()
 gpt4_key_file = os.path.join(cwd, "openai_key.txt")
 # deepseek_key_file = os.path.join(cwd, "deepseek_key.txt")
 
-with open(gpt4_key_file, "r") as f:
-    context = f.read()
-openai_key = context.split("\n")[0]
+openai_key = get_llm_api_key(gpt4_key_file)
 
 # global statistics
 statistics_dict = {
@@ -97,7 +102,6 @@ TOKEN_LIMIT_TABLE = {
     "llama3:70b-instruct-fp16": 4096,
 }
 sys.path.append(os.getcwd())
-EMBEDDING_MODEL = "text-embedding-3-small"
 
 
 class Module(object):
@@ -110,14 +114,16 @@ class Module(object):
         role_messages,
         model="gpt-3.5-turbo-0301",
         model_dirname="~/",
-        local_server_api="http://localhost:8000/v1",
+        local_server_api=None,
         retrival_method="recent_k",
         K=3,
+        embedding_server_api=None,
     ):
 
         self.model = model
         self.model_dirname = model_dirname
-        self.local_server_api = local_server_api
+        self.local_server_api = get_llm_api_base(local_server_api)
+        self.embedding_server_api = get_embedding_api_base(embedding_server_api)
         self.retrival_method = retrival_method
         self.K = K
 
@@ -193,7 +199,7 @@ class Module(object):
         # Open source models
         else:
             openai.api_base = self.local_server_api
-            openai.api_key = "token-abc123"
+            openai.api_key = get_llm_api_key(gpt4_key_file)
 
         rec = self.K
         messages = self.query_messages(rethink)
@@ -295,7 +301,9 @@ class Module(object):
                     encoder_name = "gpt-4"
 
                 elif "deepseek" in self.model.lower():
-                    client = OpenAI(api_key=openai.api_key, base_url=openai.api_base)
+                    client = OpenAI(
+                        api_key=openai.api_key, base_url=self.local_server_api
+                    )
                     response = client.chat.completions.create(
                         model=self.model, messages=messages, temperature=temperature
                     )
@@ -304,10 +312,15 @@ class Module(object):
 
                 # Open source model, use vLLM
                 else:
-                    client = OpenAI(api_key=openai.api_key, base_url=openai.api_base)
+                    client = OpenAI(
+                        api_key=openai.api_key, base_url=self.local_server_api
+                    )
+                    if self.model_dirname in ("", ".", "./", "~/"):
+                        model_name = self.model
+                    else:
+                        model_name = self.model_dirname + self.model
                     response = client.chat.completions.create(
-                        model=self.model_dirname
-                        + self.model,  # home_path+"/models/"+self.model,
+                        model=model_name,  # home_path+"/models/"+self.model,
                         messages=messages,
                         temperature=temperature,
                     )
@@ -316,6 +329,7 @@ class Module(object):
                 get_response = True
 
             except Exception as e:
+                print(messages)
                 retry_count += 1
                 rprint("[red][OPENAI ERROR][/red]:", e)
                 time.sleep(1)
@@ -421,10 +435,7 @@ COOKING STEPs:
 </example_recipe>
 
 """  # get embedding for current input
-        key = ""
-        with open(gpt4_key_file, "r") as f:
-            context = f.read()
-        key = context.split("\n")[0]
+        key = get_embedding_api_key(gpt4_key_file)
         openai.api_key = key
 
         get_response = False
@@ -433,12 +444,13 @@ COOKING STEPs:
         input = self.current_user_message["content"]
         while not get_response:
             try:
-                client = OpenAI(api_key=key)
+                client = OpenAI(api_key=key, base_url=self.embedding_server_api)
                 response = client.embeddings.create(
                     model=EMBEDDING_MODEL, input=[input]
                 )
                 get_response = True
             except Exception as e:
+                print(input)
                 rprint("[red][OPENAI ERROR][/red]:", e)
                 time.sleep(1)
 
@@ -465,10 +477,10 @@ COOKING STEPs:
         return result
 
 
-def if_two_sentence_similar_meaning(key, proxy, sentence1, sentence2):
-    with open(gpt4_key_file, "r") as f:
-        context = f.read()
-    key = context.split("\n")[0]
+def if_two_sentence_similar_meaning(
+    key, proxy, sentence1, sentence2, embedding_server_api=None
+):
+    key = get_embedding_api_key(gpt4_key_file)
     openai.api_key = key
     if sentence1 == "":
         sentence1 = " "
@@ -477,12 +489,15 @@ def if_two_sentence_similar_meaning(key, proxy, sentence1, sentence2):
     get_response = False
     while not get_response:
         try:
-            client = OpenAI(api_key=key)
+            client = OpenAI(
+                api_key=key, base_url=get_embedding_api_base(embedding_server_api)
+            )
             response = client.embeddings.create(
                 model=EMBEDDING_MODEL, input=[sentence1, sentence2]
             )
             get_response = True
         except Exception as e:
+            print([sentence1, sentence2])
             rprint("[red][OPENAI ERROR][/red]:", e)
             time.sleep(1)
     embedding_1 = response.data[0].embedding

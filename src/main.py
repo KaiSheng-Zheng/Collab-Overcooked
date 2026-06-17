@@ -47,6 +47,7 @@ from overcooked_ai_py.mdp.overcooked_mdp import OvercookedGridworld, OvercookedS
 from overcooked_ai_py.mdp.overcooked_env import OvercookedEnv
 from overcooked_ai_py.agents.agent import AgentGroup
 from overcooked_ai_py.mdp.actions import Action
+from collab.api_config import get_embedding_api_base, get_llm_api_base
 from collab.modules import statistics_dict, tokenizer,model, turn_statistics_dict
 from collab.web_util import output_to_port, check_port_in_use, change_port
 import socket
@@ -81,17 +82,20 @@ def main(variant):
     start_time = time.time()
     results = []
 
-    actor_num = 0
     actor_list = ['chef','assistant']
-    for i in range(episode):  
+    statistics_template = copy.deepcopy(statistics_dict)
+    for episode_idx in range(episode):
+        statistics_dict.clear()
+        statistics_dict.update(copy.deepcopy(statistics_template))
+        actor_num = 0
         
         agents_list = []
 
         current_time = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-        save_dir = f"{args.statistics_save_dir}/{args.gpt_model}/{args.order}"
+        save_dir = f"{variant['statistics_save_dir']}/{variant['gpt_model']}/{variant['order']}"
         if not os.path.exists(save_dir):
             os.makedirs(save_dir)
-        filename = f"{save_dir}/experiment_{current_time}_{args.order}.json"
+        filename = f"{save_dir}/experiment_{current_time}_{variant['order']}.json"
 
         if mode == 'develop':
             """
@@ -113,10 +117,10 @@ def main(variant):
                 print(env.mdp.get_utensil_states(s_t))
                 ml_actions = obs.ml_actions
                 skills = f""
-                for i, ml_action in enumerate(ml_actions):
+                for agent_idx, ml_action in enumerate(ml_actions):
                     if ml_action == None:
                         continue
-                    skills += f"P{i} finished <{ml_action}>. "
+                    skills += f"P{agent_idx} finished <{ml_action}>. "
                 print(skills)
 
                 r_total += reward
@@ -136,11 +140,14 @@ def main(variant):
                     change_port(variant["local_server_api"])
                 gpt_model = variant['gpt_model']
                 model_dirname = variant['model_dirname']
-                local_server_api = variant['local_server_api']
+                local_server_api = get_llm_api_base(variant.get('local_server_api'))
+                embedding_server_api = get_embedding_api_base(variant.get('embedding_server_api'))
                 retrival_method = variant['retrival_method']
                 K = variant['K']
+                print(f"LLM API base: {local_server_api}")
+                print(f"Embedding API base: {embedding_server_api}")
                 agent = make_agent(alg, mdp, layout, model=gpt_model, model_dirname=model_dirname,local_server_api=local_server_api,
-                                   retrival_method=retrival_method, K=K,actor=actor_list[actor_num])
+                                   embedding_server_api=embedding_server_api, retrival_method=retrival_method, K=K,actor=actor_list[actor_num])
             else:
                 agent = make_agent(alg, mdp, layout)
             agents_list.append(agent)
@@ -171,10 +178,10 @@ def main(variant):
 
                 ml_actions = obs.ml_actions
                 skills = f""
-                for i, ml_action in enumerate(ml_actions):
+                for agent_idx, ml_action in enumerate(ml_actions):
                     if ml_action == None:
                         continue
-                    skills += f"P{i} finished <{ml_action}>. "
+                    skills += f"P{agent_idx} finished <{ml_action}>. "
                 print(skills)
 
                 r_total += reward
@@ -213,7 +220,7 @@ def main(variant):
             if variant['gpt_model'] == "human":
                 for a in range(len(team.agents)):
                     output_to_port(f"agent{a}","Fail to finish task in time!",mission="fail",port=variant['local_server_api'])
-        print(f"Episode {i+1}/{episode}: {r_total}\n====\n\n")
+        print(f"Episode {episode_idx+1}/{episode}: {r_total}\n====\n\n")
         results.append(r_total)
    
     end_time = time.time()
@@ -242,7 +249,8 @@ if __name__ == '__main__':
 
     # 
     parser.add_argument('--model_dirname', type=str, default='.', help='absolute path of open-source model')      
-    parser.add_argument('--local_server_api', type=str, default= "http://localhost:8000/v1", help='IP and port address to connect with local open source llm')     
+    parser.add_argument('--local_server_api', type=str, default=None, help='OpenAI-compatible chat/completions base URL. Defaults to COLLAB_LLM_API_BASE or http://localhost:31234/v1')
+    parser.add_argument('--embedding_server_api', type=str, default=None, help='OpenAI-compatible embeddings base URL. Defaults to COLLAB_EMBEDDING_API_BASE or http://localhost:31235/v1')
     parser.add_argument('--mode', type=str, default='exp', choices=['exp', 'debug_validator', 'develop'], help='exp mode run step-by-step, demo mode run via traj')                                
     parser.add_argument('--test_mode', type=str, default='fix_task', choices=['fix_task', 'fix_time'])
     parser.add_argument('--save', type=boolean_argument, default=True, help='Whether save the result')

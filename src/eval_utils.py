@@ -15,6 +15,11 @@ import openai
 from openai import OpenAI
 import pickle
 from collections import Counter
+from collab.api_config import (
+    EMBEDDING_MODEL,
+    get_embedding_api_base,
+    get_embedding_api_key,
+)
 
 from sklearn.metrics.pairwise import cosine_similarity
 
@@ -40,22 +45,41 @@ else:
 gpt4_key_file = os.path.join(cwd, "openai_key.txt")
 REFERENCE_DIR = os.path.join(cwd, "prompts/reference")
 
+_embedding_server_api = None
+_embedding_model = EMBEDDING_MODEL
 
-EMBEDDING_MODEL = "text-embedding-3-small"
+
+def configure_embedding_api(embedding_server_api=None, embedding_model=None):
+    global _embedding_server_api, _embedding_model
+
+    if embedding_server_api:
+        _embedding_server_api = get_embedding_api_base(embedding_server_api)
+    if embedding_model:
+        _embedding_model = embedding_model
+
+
+def get_configured_embedding_api_base():
+    return get_embedding_api_base(_embedding_server_api)
+
+
+def get_configured_embedding_model():
+    return _embedding_model
 
 
 def get_embedding_from_openai(content):
-    with open(gpt4_key_file, "r") as f:
-        context = f.read()
-    key = context.split("\n")[0]
+    key = get_embedding_api_key(gpt4_key_file)
     openai.api_key = key
 
     get_response = False
     openai.api_key = key
     while not get_response:
         try:
-            client = OpenAI(api_key=openai.api_key)
-            response = client.embeddings.create(model=EMBEDDING_MODEL, input=[content])
+            client = OpenAI(
+                api_key=openai.api_key, base_url=get_configured_embedding_api_base()
+            )
+            response = client.embeddings.create(
+                model=get_configured_embedding_model(), input=[content]
+            )
             get_response = True
             time.sleep(0.5)
         except Exception as e:

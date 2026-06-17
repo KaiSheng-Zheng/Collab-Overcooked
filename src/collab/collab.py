@@ -18,6 +18,7 @@ import copy
 
 from rich import print as rprint
 from collab.modules import if_two_sentence_similar_meaning
+from .api_config import get_embedding_api_base, get_llm_api_base, read_api_keys
 
 cwd = os.getcwd()
 openai_key_file = os.path.join(cwd, "openai_key.txt")
@@ -39,12 +40,14 @@ class LLMPair(object):
         self,
         model="gpt-3.5-turbo-0301",
         model_dirname="~/",
-        local_server_api="http://localhost:8000/v1",
+        local_server_api=None,
+        embedding_server_api=None,
     ):
         self.agent_index = None
         self.model = model
         self.model_dirname = model_dirname
-        self.local_server_api = local_server_api
+        self.local_server_api = get_llm_api_base(local_server_api)
+        self.embedding_server_api = get_embedding_api_base(embedding_server_api)
 
         self.openai_api_keys = []
         self.load_openai_keys()
@@ -52,9 +55,7 @@ class LLMPair(object):
         self.proxy = "http://10.29.202.138:7890"
 
     def load_openai_keys(self):
-        with open(openai_key_file, "r") as f:
-            context = f.read()
-        self.openai_api_keys = context.split("\n")
+        self.openai_api_keys = read_api_keys(openai_key_file)
 
     def openai_api_key(self):
         if self.key_rotation:
@@ -82,7 +83,7 @@ class LLMAgents(LLMPair):
         layout,
         model="gpt-3.5-turbo-0301",
         model_dirname="~/",
-        local_server_api="http://localhost:8000/v1",
+        local_server_api=None,
         retrival_method="recent_k",
         K=1,
         actor="",
@@ -91,9 +92,13 @@ class LLMAgents(LLMPair):
         debug_mode="N",
         agent_index=None,
         outdir=None,
+        embedding_server_api=None,
     ):
         super().__init__(
-            model=model, model_dirname=model_dirname, local_server_api=local_server_api
+            model=model,
+            model_dirname=model_dirname,
+            local_server_api=local_server_api,
+            embedding_server_api=embedding_server_api,
         )
 
         self.trace = True
@@ -160,11 +165,12 @@ class LLMAgents(LLMPair):
 
         return Module(
             messages,
-            self.model,
-            self.model_dirname,
-            self.local_server_api,
-            retrival_method,
-            K,
+            model=self.model,
+            model_dirname=self.model_dirname,
+            local_server_api=self.local_server_api,
+            retrival_method=retrival_method,
+            K=K,
+            embedding_server_api=self.embedding_server_api,
         )
 
     # 	return messages
@@ -1233,7 +1239,11 @@ class LLMAgents(LLMPair):
             # embedding for every dialog of agent
             if d["role"] == "talk":
                 if if_two_sentence_similar_meaning(
-                    self.openai_api_key(), self.proxy, d["content"], parse_talk
+                    self.openai_api_key(),
+                    self.proxy,
+                    d["content"],
+                    parse_talk,
+                    embedding_server_api=self.embedding_server_api,
                 ):
                     return True, response
         self.planner.dialog_history_list.append({"role": "talk", "content": parse_talk})

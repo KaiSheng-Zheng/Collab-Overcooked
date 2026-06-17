@@ -7,7 +7,13 @@ from argparse import ArgumentParser
 import pandas as pd
 from rich import print as rprint
 
-from eval_utils import Evaluation, ExpLog
+from eval_utils import (
+    Evaluation,
+    ExpLog,
+    configure_embedding_api,
+    get_configured_embedding_api_base,
+    get_configured_embedding_model,
+)
 from distutils.util import strtobool
 
 models = ["gpt-4o"]
@@ -18,6 +24,13 @@ orders = ["apple","carrot", "onion", "potato", "tofu", "baked_bell_pepper", "bak
 def boolean_argument(value):
     """Convert a string value to boolean."""
     return bool(strtobool(value))
+
+
+def parse_list_argument(value):
+    if not value:
+        return []
+    return [item.strip() for item in value.replace(",", " ").split() if item.strip()]
+
 
 def main(variant):
 
@@ -63,8 +76,11 @@ def main(variant):
                     raise
 
         if variant['test_mode'] == 'build_in':
-            for model in models:
-                for order in orders:
+            model_list = parse_list_argument(variant.get("models")) or [variant["model"]]
+            order_list = parse_list_argument(variant.get("orders")) or orders
+
+            for model in model_list:
+                for order in order_list:
                     auto_order_list = []
                     variant['model'] = model
                     variant['order'] = order
@@ -96,7 +112,8 @@ if __name__ == '__main__':
     
     parser = ArgumentParser(description='OvercookedAI Experiment')
 
-    parser.add_argument('--model', type=str, default='gpt-3.5-turbo-0125', help='Number of episodes')
+    parser.add_argument('--model', type=str, default='gpt-4o', help='Model name to evaluate')
+    parser.add_argument('--models', type=str, default=None, help='Comma or space separated model names for build_in mode')
 
     parser.add_argument('--K', type=int, default=0, help="The number of dialogues you want to retrieve.")
     
@@ -107,12 +124,21 @@ if __name__ == '__main__':
     parser.add_argument('--log_dir', type=str, default='data', help='dir to read experiment logs from')
     parser.add_argument('--debug', type=boolean_argument, default=True, help='debug mode')
     parser.add_argument('--order', type=str,default='AUTO', help='1 task order name, "AUTO" represents automatic recognition')
+    parser.add_argument('--orders', type=str, default=None, help='Comma or space separated task names for build_in mode')
     parser.add_argument('--recipe_dir', type=str, default='prompts/recipe', help='The dir of the recipe and reference')
     parser.add_argument('--save_dir', type=str, default='eval_result', help='dir to write evaluation results to')
+    parser.add_argument('--embedding_server_api', type=str, default=None, help='OpenAI-compatible embeddings base URL. Defaults to COLLAB_EMBEDDING_API_BASE or http://localhost:31235/v1')
+    parser.add_argument('--embedding_model', type=str, default=None, help='Embedding model name. Defaults to COLLAB_EMBEDDING_MODEL or text-embedding-3-small')
 
 
     args = parser.parse_args()
     variant = vars(args)
+    configure_embedding_api(
+        embedding_server_api=variant.get("embedding_server_api"),
+        embedding_model=variant.get("embedding_model"),
+    )
+    print(f"Embedding API base: {get_configured_embedding_api_base()}")
+    print(f"Embedding model: {get_configured_embedding_model()}")
 
 
     start_time = time.time()
